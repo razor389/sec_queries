@@ -28,10 +28,21 @@ def _period_type_of_fact(f: Fact) -> str:
 def _dims_match(f: Fact, required: Dict[str, Any] | None) -> bool:
     if not required:
         return True
+    
+    # Check that fact has exactly the required dimensions (no more, no less)
+    if len(f.dims) != len(required):
+        logger.debug("    Dimension count mismatch: fact has %d dims, required has %d dims", len(f.dims), len(required))
+        return False
+    
     for axis, expected in required.items():
         exp_list = expected if isinstance(expected, list) else [expected]
-        if axis not in f.dims or f.dims[axis] not in exp_list:
+        if axis not in f.dims:
+            logger.debug("    Missing axis '%s' in fact dims", axis)
             return False
+        if f.dims[axis] not in exp_list:
+            logger.debug("    Axis '%s' has value '%s', expected one of %s", axis, f.dims[axis], exp_list)
+            return False
+        logger.debug("    Axis '%s' matches: '%s'", axis, f.dims[axis])
     return True
 
 
@@ -152,12 +163,37 @@ def extract_all(index: XBRLIndex, cfg: CompanyConfig) -> Dict[str, dict]:
     facts_processed = 0
     facts_matched = 0
 
+    # Debug: Show all concepts that have segment rules
+    segment_concepts = set()
+    for seg in cfg.segments:
+        segment_concepts.add(seg.concept)
+    logger.debug("Segment concepts to look for: %s", segment_concepts)
+    
+    # Debug: Log some facts with dimensions to understand the data structure
+    facts_with_dims_logged = 0
+    
     for f in index.facts.values():
         facts_processed += 1
+        
+        # Debug: Show some facts that have dimensions
+        if f.dims and facts_with_dims_logged < 10:
+            logger.debug("Fact with dims: concept='%s', dims=%s, value=%s, year=%s", 
+                        f.concept, f.dims, f.value, _year_of_fact(f))
+            facts_with_dims_logged += 1
+        
         rules = concept_to_rules.get(f.concept)
         if not rules:
+            # Debug: Log if this is a segment concept we're missing
+            if f.concept in segment_concepts:
+                logger.debug("Found segment concept '%s' but no rules mapped: dims=%s, value=%s", 
+                           f.concept, f.dims, f.value)
             continue
         facts_matched += 1
+        
+        # Debug: Log when we find facts for segment concepts
+        if f.concept in segment_concepts:
+            logger.debug("Processing fact for segment concept '%s': dims=%s, value=%s, year=%s", 
+                        f.concept, f.dims, f.value, _year_of_fact(f))
 
         year = _year_of_fact(f)
         if not year:
@@ -168,14 +204,27 @@ def extract_all(index: XBRLIndex, cfg: CompanyConfig) -> Dict[str, dict]:
         for rule in rules:
             # Segment rules
             if isinstance(rule, SegmentRule):
-                if (not _dims_match(f, rule.required_dims)
-                        or not _unit_match(f, rule.units)
-                        or not _period_type_match(f, rule.period_type)):
+                logger.debug("Processing segment rule '%s' for concept %s in year %s", rule.name, f.concept, year)
+                logger.debug("  Fact dims: %s", f.dims)
+                logger.debug("  Required dims: %s", rule.required_dims)
+                logger.debug("  Fact value: %s, unit: %s, period_type: %s", f.value, f.unit, _period_type_of_fact(f))
+                
+                dims_match = _dims_match(f, rule.required_dims)
+                unit_match = _unit_match(f, rule.units)
+                period_match = _period_type_match(f, rule.period_type)
+                
+                logger.debug("  Dims match: %s, Unit match: %s, Period match: %s", dims_match, unit_match, period_match)
+                
+                if not dims_match or not unit_match or not period_match:
+                    logger.debug("  SKIPPED segment rule '%s' - failed matching criteria", rule.name)
                     continue
 
                 ydict = results.setdefault(year, {})
                 segdict = ydict.setdefault("segments", {})
-                segdict[rule.name] = segdict.get(rule.name, 0.0) + f.value
+                old_value = segdict.get(rule.name, 0.0)
+                segdict[rule.name] = old_value + f.value
+                logger.info("  MATCHED segment rule '%s': added %s to existing %s = %s", 
+                           rule.name, f.value, old_value, segdict[rule.name])
                 continue
 
             # Metric rules

@@ -86,7 +86,7 @@
           "name": "term_life",
           "concept": "us-gaap:Revenues",
           "required_dims": {
-            "us-gaap:StatementBusinessSegmentsAxis": "pri:TermLifeSegmentMember"
+            "us-gaap:StatementBusinessSegmentsAxis": "pri:TermLifeInsuranceSegmentRevenuesMember"
           },
           "years": "2019-2021"
         },
@@ -94,7 +94,7 @@
           "name": "investment_savings",
           "concept": "us-gaap:Revenues", 
           "required_dims": {
-            "us-gaap:StatementBusinessSegmentsAxis": "pri:InvestmentProductsSegmentMember"
+            "us-gaap:StatementBusinessSegmentsAxis": "pri:InvestmentAndSavingsProductsSegmentRevenuesMember"
           },
           "years": "2019-2021"
         },

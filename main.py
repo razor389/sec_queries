@@ -11,6 +11,35 @@ logger = logging.getLogger(__name__)
 USER_AGENT = f"{os.getenv('USER_NAME', 'Unknown User')} ({os.getenv('USER_EMAIL', 'unknown@example.com')})"
 
 
+def _is_year_data_complete(year: str, data: dict, cfg) -> bool:
+    """
+    Check if extracted year data is complete based on configuration expectations.
+    A year is complete if it has segments when segments are configured for that year.
+    """
+    year_int = int(year)
+    
+    # Check if any segment rules apply to this year
+    has_expected_segments = False
+    for segment_rule in cfg.segments:
+        # Import the year_matches_range function
+        from edgar_extractor.config_schema import year_matches_range
+        if year_matches_range(year_int, getattr(segment_rule, 'years', None)):
+            has_expected_segments = True
+            break
+    
+    # If segments are expected for this year, check if we have them
+    if has_expected_segments:
+        segments = data.get('segments', {})
+        if not segments:
+            logger.debug("Year %s is incomplete - expected segments but found none", year)
+            return False
+        
+        # Could add more detailed checking here if needed
+        logger.debug("Year %s appears complete - has %d segments", year, len(segments))
+    
+    return True
+
+
 def extract_multi_year_data(ticker: str, form: str, config_path: str, target_years: int = 7) -> tuple[dict, dict]:
     """
     Extract data for multiple years by fetching filings that contain comparative data.
@@ -48,21 +77,47 @@ def extract_multi_year_data(ticker: str, form: str, config_path: str, target_yea
             results = extract_all(index, cfg)
             
             years_added = []
-            # Add new years to combined results (only if we need them and don't have them)
+            years_updated = []
+            # Add new years to combined results (only if we need them and don't have them, or if we can improve incomplete data)
             for year, data in results.items():
                 year_int = int(year)
-                if year not in combined_results and year_int in years_needed:
-                    combined_results[year] = data
-                    year_to_filing[year] = {
-                        'accession': filing['accession'],
-                        'filing_url': filing['filing_url'],
-                        'date': filing.get('date', 'unknown')
-                    }
-                    years_needed.discard(year_int)
-                    years_added.append(year)
+                if year_int in years_needed:
+                    # Check if we already have this year
+                    if year in combined_results:
+                        # We have this year, but is our existing data complete?
+                        if not _is_year_data_complete(year, combined_results[year], cfg):
+                            # Existing data is incomplete, check if new data is better
+                            if _is_year_data_complete(year, data, cfg):
+                                logger.info("Updating incomplete year %s with more complete data from filing %s", year, filing['accession'])
+                                combined_results[year] = data
+                                year_to_filing[year] = {
+                                    'accession': filing['accession'],
+                                    'filing_url': filing['filing_url'],
+                                    'date': filing.get('date', 'unknown')
+                                }
+                                years_updated.append(year)
+                                # Only remove from years_needed if data is now complete
+                                years_needed.discard(year_int)
+                    else:
+                        # We don't have this year yet
+                        combined_results[year] = data
+                        year_to_filing[year] = {
+                            'accession': filing['accession'],
+                            'filing_url': filing['filing_url'],
+                            'date': filing.get('date', 'unknown')
+                        }
+                        years_added.append(year)
+                        # Only remove from years_needed if data is complete
+                        if _is_year_data_complete(year, data, cfg):
+                            years_needed.discard(year_int)
+                        else:
+                            logger.info("Added incomplete year %s from filing %s - will continue searching", year, filing['accession'])
             
-            if years_added:
-                logger.info("Added years %s from filing %s", sorted(years_added), filing['accession'])
+            if years_added or years_updated:
+                if years_added:
+                    logger.info("Added years %s from filing %s", sorted(years_added), filing['accession'])
+                if years_updated:
+                    logger.info("Updated years %s from filing %s", sorted(years_updated), filing['accession'])
             else:
                 logger.info("No new years added from filing %s", filing['accession'])
             

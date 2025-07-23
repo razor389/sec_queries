@@ -63,21 +63,48 @@
           "concept": "us-gaap:Revenues",
           "required_dims": {
             "us-gaap:StatementBusinessSegmentsAxis": "pri:TermLifeInsuranceSegmentRevenuesMember"
-          }
+          },
+          "years": "2022-2024"
         },
         {
           "name": "investment_savings",
           "concept": "us-gaap:Revenues",
           "required_dims": {
             "us-gaap:StatementBusinessSegmentsAxis": "pri:InvestmentAndSavingsProductsSegmentRevenuesMember"
-          }
+          },
+          "years": "2022-2024"
         },
         {
           "name": "corporate_and_other",
           "concept": "us-gaap:Revenues",
           "required_dims": {
             "us-gaap:StatementBusinessSegmentsAxis": "us-gaap:CorporateAndOtherMember"
-          }
+          },
+          "years": "2022-2024"
+        },
+        {
+          "name": "term_life",
+          "concept": "us-gaap:Revenues",
+          "required_dims": {
+            "us-gaap:StatementBusinessSegmentsAxis": "pri:TermLifeSegmentMember"
+          },
+          "years": "2019-2021"
+        },
+        {
+          "name": "investment_savings",
+          "concept": "us-gaap:Revenues", 
+          "required_dims": {
+            "us-gaap:StatementBusinessSegmentsAxis": "pri:InvestmentProductsSegmentMember"
+          },
+          "years": "2019-2021"
+        },
+        {
+          "name": "corporate_and_other",
+          "concept": "us-gaap:Revenues",
+          "required_dims": {
+            "us-gaap:StatementBusinessSegmentsAxis": "us-gaap:CorporateAndOtherMember"
+          },
+          "years": "2019-2021"
         }
       ]
     }

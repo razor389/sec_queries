@@ -8,7 +8,7 @@ from typing import Any, DefaultDict, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
-from .config_schema import CompanyConfig, MetricRule, MetricStrategy, SegmentRule
+from .config_schema import CompanyConfig, MetricRule, MetricStrategy, SegmentRule, year_matches_range
 from .xbrl_index import Fact, XBRLIndex
 
 
@@ -202,9 +202,15 @@ def extract_all(index: XBRLIndex, cfg: CompanyConfig) -> Dict[str, dict]:
         date = f.period_key[1] or f.period_key[0] or ""
 
         for rule in rules:
+            # Check if rule applies to this year
+            if not year_matches_range(int(year), getattr(rule, 'years', None)):
+                logger.debug("Skipping rule '%s' - year %s not in range '%s'", rule.name, year, getattr(rule, 'years', 'all'))
+                continue
+                
             # Segment rules
             if isinstance(rule, SegmentRule):
-                logger.debug("Processing segment rule '%s' for concept %s in year %s", rule.name, f.concept, year)
+                logger.debug("Processing segment rule '%s' for concept %s in year %s (range: %s)", 
+                           rule.name, f.concept, year, getattr(rule, 'years', 'all'))
                 logger.debug("  Fact dims: %s", f.dims)
                 logger.debug("  Required dims: %s", rule.required_dims)
                 logger.debug("  Fact value: %s, unit: %s, period_type: %s", f.value, f.unit, _period_type_of_fact(f))
@@ -228,6 +234,8 @@ def extract_all(index: XBRLIndex, cfg: CompanyConfig) -> Dict[str, dict]:
                 continue
 
             # Metric rules
+            logger.debug("Processing metric rule '%s' for concept %s in year %s (range: %s)", 
+                       rule.name, f.concept, year, getattr(rule, 'years', 'all'))
             if not _dims_match(f, rule.required_dims):
                 continue
             if not _unit_match(f, rule.units):

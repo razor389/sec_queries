@@ -11,10 +11,13 @@ logger = logging.getLogger(__name__)
 USER_AGENT = f"{os.getenv('USER_NAME', 'Unknown User')} ({os.getenv('USER_EMAIL', 'unknown@example.com')})"
 
 
-def extract_multi_year_data(ticker: str, form: str, config_path: str, target_years: int = 7) -> dict:
+def extract_multi_year_data(ticker: str, form: str, config_path: str, target_years: int = 7) -> tuple[dict, dict]:
     """
     Extract data for multiple years by fetching filings that contain comparative data.
     Each filing typically contains 3-4 years of data.
+    
+    Returns:
+        tuple: (results_dict, year_to_filing_dict)
     """
     logger.info("Starting multi-year extraction for ticker=%s, target_years=%d", ticker, target_years)
     cfg = load_company_config(config_path, ticker)
@@ -22,6 +25,7 @@ def extract_multi_year_data(ticker: str, form: str, config_path: str, target_yea
     cik = client.get_cik_from_ticker(ticker)
     
     combined_results = {}
+    year_to_filing = {}  # Track which filing each year came from
     current_year = 2024
     years_needed = set(range(current_year - target_years + 1, current_year + 1))
     logger.info("Target years: %s", sorted(years_needed))
@@ -49,6 +53,11 @@ def extract_multi_year_data(ticker: str, form: str, config_path: str, target_yea
                 year_int = int(year)
                 if year not in combined_results and year_int in years_needed:
                     combined_results[year] = data
+                    year_to_filing[year] = {
+                        'accession': filing['accession'],
+                        'filing_url': filing['filing_url'],
+                        'date': filing.get('date', 'unknown')
+                    }
                     years_needed.discard(year_int)
                     years_added.append(year)
             
@@ -68,7 +77,7 @@ def extract_multi_year_data(ticker: str, form: str, config_path: str, target_yea
         logger.warning("Could not find data for years: %s", missing_years)
     
     logger.info("Multi-year extraction complete: extracted %d years", len(combined_results))
-    return combined_results
+    return combined_results, year_to_filing
 
 
 def debug_one_filing(ticker: str, accession: str | None, form: str, config_path: str):
@@ -128,6 +137,7 @@ def debug_one_filing(ticker: str, accession: str | None, form: str, config_path:
     print(f"All years in XBRL: {all_years}")
     extracted_years = sorted(results.keys())
     print(f"Years with extracted data: {extracted_years}")
+    print(f"📄 Filing URL: {chosen['filing_url']}")
     
     # Show what's available for each year
     for year in all_years:
@@ -163,10 +173,13 @@ if __name__ == "__main__":
     else:
         # Multi-year mode (new default)
         logger.info("Running in multi-year mode")
-        results = extract_multi_year_data(args.ticker, args.form, args.config, args.years)
+        results, year_to_filing = extract_multi_year_data(args.ticker, args.form, args.config, args.years)
         
         print("=== MULTI-YEAR RESULTS ===")
         for year, data in sorted(results.items()):
+            filing_info = year_to_filing.get(year, {})
+            filing_url = filing_info.get('filing_url', 'Unknown')
             print(f"{year}: {data}")
+            print(f"📄 Filing URL: {filing_url}")
         
         print(f"\nExtracted data for {len(results)} years: {sorted(results.keys())}")

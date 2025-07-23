@@ -5,6 +5,28 @@ from enum import Enum
 from typing import Dict, List, Optional, Union
 
 
+def year_matches_range(year: int, year_range: Optional[str]) -> bool:
+    """
+    Check if a year falls within a specified range.
+    
+    Args:
+        year: The year to check (e.g., 2022)
+        year_range: Range string like "2020-2024", "2018-2021", or None for all years
+    
+    Returns:
+        True if year is in range or no range specified
+    """
+    if not year_range:
+        return True
+    
+    if '-' not in year_range:
+        # Single year
+        return year == int(year_range)
+    
+    start_year, end_year = year_range.split('-')
+    return int(start_year) <= year <= int(end_year)
+
+
 class MetricStrategy(str, Enum):
     PICK_FIRST = "pick_first"
     SUM = "sum"
@@ -24,6 +46,7 @@ class MetricRule:
     period_type: Optional[str] = None          # "duration" | "instant"
     category: Optional[str] = None             # e.g. "balance_sheet.assets"
     filter_for_consolidated: bool = False      # NEW: enforce consolidated-members filter
+    years: Optional[str] = None                # e.g. "2020-2024" or "2018-2021"
 
 
 @dataclass
@@ -34,6 +57,7 @@ class SegmentRule:
     units: Optional[List[str]] = None
     period_type: Optional[str] = None
     strategy: MetricStrategy = MetricStrategy.SUM
+    years: Optional[str] = None                # e.g. "2020-2024" or "2018-2021"
 
 
 @dataclass

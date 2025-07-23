@@ -1,0 +1,85 @@
+{
+  "default": {
+    "metrics": [
+      {
+        "name": "revenues",
+        "aliases": ["us-gaap:Revenues", "us-gaap:PremiumsEarnedNet", "us-gaap:PremiumsWrittenNet"],
+        "strategy": "pick_first"
+      }
+    ],
+    "consolidated_members": [
+      "us-gaap:ConsolidatedEntitiesMember",
+      "us-gaap:OperatingSegmentsMember"
+    ],
+    "axis_aliases": {
+      "segment": ["us-gaap:StatementBusinessSegmentsAxis", "srt:ConsolidationItemsAxis"],
+      "product": ["srt:ProductOrServiceAxis"]
+    },
+    "balance_sheet_concepts": {
+      "assets": ["us-gaap:Assets"],
+      "liabilities": ["us-gaap:Liabilities"],
+      "shareholders_equity": ["us-gaap:StockholdersEquity"]
+    }
+  },
+  "companies": {
+    "PGR": {
+      "segments": [
+        {
+          "name": "personal_lines_agency",
+          "concept": "us-gaap:Revenues",
+          "required_dims": {
+            "us-gaap:StatementBusinessSegmentsAxis": "pgr:PersonalLinesSegmentMember",
+            "us-gaap:SubsegmentsAxis": "pgr:AgencyChannelMember"
+          }
+        },
+        {
+          "name": "personal_lines_direct",
+          "concept": "us-gaap:Revenues",
+          "required_dims": {
+            "us-gaap:StatementBusinessSegmentsAxis": "pgr:PersonalLinesSegmentMember",
+            "us-gaap:SubsegmentsAxis": "pgr:DirectChannelMember"
+          }
+        },
+        {
+          "name": "commercial_lines",
+          "concept": "us-gaap:Revenues",
+          "required_dims": {
+            "us-gaap:StatementBusinessSegmentsAxis": "pgr:CommercialLinesSegmentMember"
+          }
+        },
+        {
+          "name": "property_lines",
+          "concept": "us-gaap:Revenues",
+          "required_dims": {
+            "us-gaap:StatementBusinessSegmentsAxis": "pgr:PropertySegmentMember"
+          }
+        }
+      ]
+    },
+    "PRI": {
+      "segments": [
+        {
+          "name": "term_life",
+          "concept": "us-gaap:Revenues",
+          "required_dims": {
+            "us-gaap:StatementBusinessSegmentsAxis": "pri:TermLifeInsuranceSegmentRevenuesMember"
+          }
+        },
+        {
+          "name": "investment_savings",
+          "concept": "us-gaap:Revenues",
+          "required_dims": {
+            "us-gaap:StatementBusinessSegmentsAxis": "pri:InvestmentAndSavingsProductsSegmentRevenuesMember"
+          }
+        },
+        {
+          "name": "corporate_and_other",
+          "concept": "us-gaap:Revenues",
+          "required_dims": {
+            "us-gaap:StatementBusinessSegmentsAxis": "us-gaap:CorporateAndOtherMember"
+          }
+        }
+      ]
+    }
+  }
+}

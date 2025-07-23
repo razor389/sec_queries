@@ -40,6 +40,33 @@ def _is_year_data_complete(year: str, data: dict, cfg) -> bool:
     return True
 
 
+def _get_actual_filing_url_for_year(client: 'SECClient', cik: str, year: int, form: str) -> str:
+    """
+    Get the actual filing URL for a specific year (not the filing we extracted data from).
+    This finds the original filing for that year so users can inspect the source.
+    """
+    try:
+        # Get more filings to ensure we find the right year
+        filings = client.list_filings(cik, form=form, count=20)
+        
+        # Look for a filing that matches the target year
+        target_year_str = str(year)
+        for filing in filings:
+            filing_date = filing.get('date', '')
+            if filing_date.startswith(target_year_str):
+                return filing['filing_url']
+        
+        # If no exact match, return first filing (fallback)
+        if filings:
+            logger.warning("Could not find exact filing for year %d, using fallback", year)
+            return filings[0]['filing_url']
+        
+        return "Unknown"
+    except Exception as e:
+        logger.warning("Failed to get filing URL for year %d: %s", year, e)
+        return "Unknown"
+
+
 def extract_multi_year_data(ticker: str, form: str, config_path: str, target_years: int = 7) -> tuple[dict, dict]:
     """
     Extract data for multiple years by fetching filings that contain comparative data.
@@ -126,6 +153,21 @@ def extract_multi_year_data(ticker: str, form: str, config_path: str, target_yea
         except Exception as e:
             logger.warning("Failed to process filing %s: %s", filing['accession'], e)
             continue
+    
+    # Update year_to_filing to use actual filing URLs for each year
+    logger.info("Looking up actual filing URLs for each extracted year...")
+    for year in combined_results.keys():
+        year_int = int(year)
+        actual_filing_url = _get_actual_filing_url_for_year(client, cik, year_int, form)
+        if year in year_to_filing:
+            year_to_filing[year]['actual_filing_url'] = actual_filing_url
+        else:
+            year_to_filing[year] = {
+                'accession': 'Unknown',
+                'filing_url': actual_filing_url,
+                'actual_filing_url': actual_filing_url,
+                'date': f'{year}-12-31'
+            }
     
     missing_years = sorted(years_needed) if years_needed else []
     if missing_years:
@@ -233,7 +275,8 @@ if __name__ == "__main__":
         print("=== MULTI-YEAR RESULTS ===")
         for year, data in sorted(results.items()):
             filing_info = year_to_filing.get(year, {})
-            filing_url = filing_info.get('filing_url', 'Unknown')
+            # Use actual_filing_url if available, otherwise fallback to filing_url
+            filing_url = filing_info.get('actual_filing_url', filing_info.get('filing_url', 'Unknown'))
             print(f"{year}: {data}")
             print(f"📄 Filing URL: {filing_url}")
         

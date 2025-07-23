@@ -1,12 +1,13 @@
 import argparse
 import logging
+import os
 from pathlib import Path
 
 from edgar_extractor import SECClient, load_company_config, XBRLIndex, extract_all
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
-USER_AGENT = "Name (your.name@your.email.com)"
+USER_AGENT = f"{os.getenv('USER_NAME', 'Unknown User')} ({os.getenv('USER_EMAIL', 'unknown@example.com')})"
 
 
 def debug_one_filing(ticker: str, accession: str | None, form: str, config_path: str):

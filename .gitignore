@@ -2,3 +2,4 @@ repomix-output.xml
 .venv
 .cache
 edgar_extractor/__pycache__
+.env

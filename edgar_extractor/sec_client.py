@@ -68,16 +68,21 @@ class SECClient:
 
     def get_cik_from_ticker(self, ticker: str) -> str:
         ticker = ticker.upper()
+        logger.info("Looking up CIK for ticker: %s", ticker)
         cache = _load_cache()
         if ticker in cache:
+            logger.debug("Found ticker %s in cache: %s", ticker, cache[ticker])
             return cache[ticker]
 
         # Prefer JSON table
+        logger.debug("Ticker not in cache, trying JSON table")
         try:
             table = _load_sec_ticker_table(self.session, self.headers)
+            logger.debug("Loaded SEC ticker table with %d entries", len(table))
             for _, row in table.items():
                 if row["ticker"].upper() == ticker:
                     cik = str(row["cik_str"]).lstrip("0")
+                    logger.info("Found ticker %s in JSON table: CIK %s", ticker, cik)
                     cache[ticker] = cik
                     _save_cache(cache)
                     return cik
@@ -85,19 +90,24 @@ class SECClient:
             logger.warning("JSON ticker table failed (%s). Falling back to HTML scrape.", e)
 
         # HTML scrape fallback
+        logger.info("Ticker %s not found in JSON table, falling back to HTML scrape", ticker)
         params = {"action": "getcompany", "CIK": ticker, "owner": "exclude", "count": "1"}
         url = f"{SEC_BASE}/cgi-bin/browse-edgar?{urlencode(params)}"
+        logger.debug("HTML scrape URL: %s", url)
         r = self.session.get(url, headers=self.headers, timeout=(10, 30))
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
         cik_span = soup.find("span", string=lambda s: s and "CIK#" in s)
         if not cik_span:
+            logger.error("Could not locate CIK span for ticker %s", ticker)
             raise ValueError(f"Could not locate CIK for {ticker}")
         m = re.search(r"CIK#?:?\s*(\d+)", cik_span.get_text())
         if not m:
+            logger.error("CIK pattern not found in span text: %s", cik_span.get_text())
             raise ValueError(f"CIK not found in span for {ticker}")
         cik = m.group(1).lstrip("0")
+        logger.info("Found CIK via HTML scrape for %s: %s", ticker, cik)
 
         cache[ticker] = cik
         _save_cache(cache)
@@ -109,8 +119,10 @@ class SECClient:
             f"/cgi-bin/browse-edgar?action=getcompany&CIK={cik}"
             f"&type={form}&owner=exclude&start=0&count={count}&output=atom",
         )
+        logger.debug("Fetching filings from: %s", url)
         r = self.session.get(url, headers=self.headers, timeout=(10, 30))
         r.raise_for_status()
+        logger.debug("Filings response status: %d, content length: %d", r.status_code, len(r.content))
 
         root = BeautifulSoup(r.content, "xml")
         out: List[Dict] = []
@@ -130,11 +142,14 @@ class SECClient:
                     "filing_url": urljoin(SEC_BASE, href),
                     "date": (updated.text.split("T")[0] if updated else ""),
                 })
+        logger.info("Parsed %d filings for CIK %s", len(out), cik)
         return out
 
     def get_instance_xml_url(self, filing_url: str) -> str:
+        logger.debug("Fetching filing page: %s", filing_url)
         r = self.session.get(filing_url, headers=self.headers, timeout=(10, 30))
         r.raise_for_status()
+        logger.debug("Filing page response: %d, length: %d", r.status_code, len(r.text))
         soup = BeautifulSoup(r.text, "html.parser")
 
         table = soup.find("table", class_="tableFile")
@@ -147,22 +162,35 @@ class SECClient:
                 if ("extracted" in desc and "instance document" in desc and "xbrl" in desc):
                     a = cells[2].find("a")
                     if a and a.get("href", "").lower().endswith(".xml"):
-                        return urljoin(SEC_BASE, a["href"])
+                        xml_url = urljoin(SEC_BASE, a["href"])
+                        logger.info("Found XBRL instance document URL: %s", xml_url)
+                        return xml_url
 
         a = soup.select_one('a[href$="_htm.xml"]')
         if a:
-            return urljoin(SEC_BASE, a.get("href"))
+            xml_url = urljoin(SEC_BASE, a.get("href"))
+            logger.info("Found XML URL via fallback selector: %s", xml_url)
+            return xml_url
 
+        logger.error("No XML instance document link found on filing page: %s", filing_url)
         raise ValueError("No XML instance document link found on filing page.")
 
     def fetch_xml(self, xml_url: str) -> str:
         max_retries = 3
+        logger.debug("Fetching XML content, max retries: %d", max_retries)
         for attempt in range(max_retries):
             try:
+                logger.debug("Attempt %d/%d fetching XML", attempt + 1, max_retries)
                 r = self.session.get(xml_url, headers=self.headers, timeout=(10, 60))
                 r.raise_for_status()
+                logger.info("XML fetched successfully, size: %d bytes", len(r.text))
                 return r.text
             except requests.exceptions.Timeout:
                 logger.warning("Timeout fetching XML (attempt %s/%s)", attempt + 1, max_retries)
+                time.sleep(2)
+            except Exception as e:
+                logger.error("Error fetching XML (attempt %d/%d): %s", attempt + 1, max_retries, e)
+                if attempt == max_retries - 1:
+                    raise
                 time.sleep(2)
         raise RuntimeError("Failed to fetch XML after retries")

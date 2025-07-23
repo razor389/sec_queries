@@ -1,9 +1,12 @@
 # edgar_extractor/metrics.py
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, DefaultDict, Dict, List, Tuple
+
+logger = logging.getLogger(__name__)
 
 from .config_schema import CompanyConfig, MetricRule, MetricStrategy, SegmentRule
 from .xbrl_index import Fact, XBRLIndex
@@ -137,17 +140,24 @@ def extract_all(index: XBRLIndex, cfg: CompanyConfig) -> Dict[str, dict]:
       ...
     }
     """
+    logger.info("Starting metric extraction with %d metric rules, %d segment rules", len(cfg.metrics), len(cfg.segments))
     results: Dict[str, dict] = {}
 
     concept_to_rules = _build_concept_to_rules(cfg)
+    logger.debug("Built concept-to-rules mapping: %d concepts mapped", len(concept_to_rules))
 
     # Accumulators for strategies other than PICK_FIRST
     metric_acc: DefaultDict[Tuple[str, str], Accumulator] = defaultdict(Accumulator)
+    
+    facts_processed = 0
+    facts_matched = 0
 
     for f in index.facts.values():
+        facts_processed += 1
         rules = concept_to_rules.get(f.concept)
         if not rules:
             continue
+        facts_matched += 1
 
         year = _year_of_fact(f)
         if not year:
@@ -199,6 +209,7 @@ def extract_all(index: XBRLIndex, cfg: CompanyConfig) -> Dict[str, dict]:
             metric_acc[(year, rule.name)].update(f.value, date)
 
     # Flush accumulators
+    logger.debug("Flushing %d accumulators", len(metric_acc))
     for (year, name), acc in metric_acc.items():
         # Retrieve the rule (multiple metrics could share a name, but we assume unique names)
         rule = next(r for r in cfg.metrics if r.name == name)
@@ -207,4 +218,7 @@ def extract_all(index: XBRLIndex, cfg: CompanyConfig) -> Dict[str, dict]:
             continue
         _place_value(results, year, rule, name, val)
 
+    logger.info("Extraction complete: processed %d facts, matched %d facts, extracted data for %d years", 
+                facts_processed, facts_matched, len(results))
+    logger.debug("Results by year: %s", {year: len(data) for year, data in results.items()})
     return results

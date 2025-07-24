@@ -56,7 +56,7 @@ class SegmentRule:
     required_dims: Dict[str, Union[str, List[str]]]
     units: Optional[List[str]] = None
     period_type: Optional[str] = None
-    strategy: MetricStrategy = MetricStrategy.SUM
+    strategy: MetricStrategy = MetricStrategy.PICK_FIRST
     years: Optional[str] = None                # e.g. "2020-2024" or "2018-2021"
 
 

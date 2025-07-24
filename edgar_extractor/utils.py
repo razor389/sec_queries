@@ -79,6 +79,7 @@ def _parse_metrics(merged: Dict[str, Any]) -> List[MetricRule]:
                 units=m.get("units"),
                 period_type=m.get("period_type"),
                 category=m.get("category"),
+                filter_for_consolidated=m.get("filter_for_consolidated", False),
                 years=m.get("years"),
             )
         )

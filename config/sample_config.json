@@ -3,8 +3,14 @@
     "metrics": [
       {
         "name": "revenues",
-        "aliases": ["us-gaap:Revenues", "us-gaap:PremiumsEarnedNet", "us-gaap:PremiumsWrittenNet"],
-        "strategy": "pick_first"
+        "aliases": [
+          "us-gaap:Revenues",
+          "us-gaap:PremiumsEarnedNet",
+          "us-gaap:PremiumsWrittenNet"
+        ],
+        "strategy": "pick_first",
+        "filter_for_consolidated": true,
+        "required_dims": {}
       }
     ],
     "consolidated_members": [

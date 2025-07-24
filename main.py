@@ -191,7 +191,17 @@ def extract_multi_year_data(ticker: str, form: str, config_path: str, target_yea
                 if categories:
                     print(f"\n{category_type.upper()}:")
                     for category_name, missing_years_list in categories.items():
-                        print(f"  • {category_name}: missing in years {missing_years_list}")
+                        # Find the rule to show its aliases
+                        rule = None
+                        if category_type == "metrics":
+                            rule = next((r for r in cfg.metrics if r.name == category_name), None)
+                        elif category_type == "segments":
+                            rule = next((r for r in cfg.segments if r.name == category_name), None)
+                        
+                        if rule and hasattr(rule, 'aliases'):
+                            print(f"  • {category_name}: missing in years {missing_years_list} (searched for: {rule.aliases})")
+                        else:
+                            print(f"  • {category_name}: missing in years {missing_years_list}")
         else:
             print("\n✅ All configured categories have data for all extracted years")
     
@@ -199,7 +209,12 @@ def extract_multi_year_data(ticker: str, form: str, config_path: str, target_yea
     return combined_results, year_to_filing
 
 
-def debug_one_filing(ticker: str, accession: str | None, form: str, config_path: str):
+def debug_one_filing(ticker: str, accession: str | None, form: str, config_path: str, dry_run: bool = False):
+    # Enable debug logging and show dry-run notification if in dry-run mode  
+    if dry_run:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.info("--- RUNNING IN DRY-RUN MODE ---")
+    
     logger.info("Starting debug_one_filing for ticker=%s, form=%s, config=%s", ticker, form, config_path)
     logger.info("Loading company config from %s for ticker %s", config_path, ticker)
     cfg = load_company_config(config_path, ticker)
@@ -279,6 +294,7 @@ def cli():
     parser.add_argument("--single-filing", action="store_true", help="Extract from single filing only")
     parser.add_argument("--years", type=int, default=7, help="Target number of years to extract")
     parser.add_argument("--dump-facts", action="store_true")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate extraction and show detailed matching logs without saving.")
     return parser.parse_args()
 
 
@@ -288,7 +304,7 @@ if __name__ == "__main__":
     if args.accession or args.single_filing:
         # Single filing mode (original functionality)
         logger.info("Running in single-filing mode")
-        debug_one_filing(args.ticker, args.accession, args.form, args.config)
+        debug_one_filing(args.ticker, args.accession, args.form, args.config, args.dry_run)
     else:
         # Multi-year mode (new default)
         logger.info("Running in multi-year mode")

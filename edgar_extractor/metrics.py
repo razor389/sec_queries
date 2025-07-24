@@ -26,13 +26,13 @@ def _period_type_of_fact(f: Fact) -> str:
 
 
 def _dims_match(f: Fact, required: Dict[str, Any] | None) -> bool:
-    if not required:
-        return True
+    if required is None:
+        return True          # truly no constraint
+    if required == {}:
+        return not f.dims    # only pure facts (no dimensions allowed)
     
-    # Check that fact has exactly the required dimensions (no more, no less)
-    if len(f.dims) != len(required):
-        logger.debug("    Dimension count mismatch: fact has %d dims, required has %d dims", len(f.dims), len(required))
-        return False
+    # A fact matches if it contains all required dimensions, even if it has additional ones
+    # Removed the exact dimension count check to be more flexible
     
     for axis, expected in required.items():
         exp_list = expected if isinstance(expected, list) else [expected]
@@ -218,8 +218,8 @@ def extract_all(index: XBRLIndex, cfg: CompanyConfig) -> Dict[str, dict]:
     concept_to_rules = _build_concept_to_rules(cfg)
     logger.debug("Built concept-to-rules mapping: %d concepts mapped", len(concept_to_rules))
 
-    # Accumulators for strategies other than PICK_FIRST
-    metric_acc: DefaultDict[Tuple[str, str], Accumulator] = defaultdict(Accumulator)
+    # Unified candidate collection for both metrics and segments
+    candidate_facts: DefaultDict[Tuple[str, str, str], List[Fact]] = defaultdict(list)  # Key: (year, rule.name, rule_type)
     
     facts_processed = 0
     facts_matched = 0
@@ -286,12 +286,25 @@ def extract_all(index: XBRLIndex, cfg: CompanyConfig) -> Dict[str, dict]:
                     logger.debug("  SKIPPED segment rule '%s' - failed matching criteria", rule.name)
                     continue
 
-                ydict = results.setdefault(year, {})
-                segdict = ydict.setdefault("segments", {})
-                old_value = segdict.get(rule.name, 0.0)
-                segdict[rule.name] = old_value + f.value
-                logger.info("  MATCHED segment rule '%s': added %s to existing %s = %s", 
-                           rule.name, f.value, old_value, segdict[rule.name])
+                # Memory optimization: For PICK_FIRST strategy, only collect first matching fact per concept
+                key = (year, rule.name, "segment")
+                if rule.strategy == MetricStrategy.PICK_FIRST:
+                    if key not in candidate_facts:  # First match for this rule
+                        candidate_facts[key].append(f)
+                        logger.info("  ADDED segment candidate '%s' (PICK_FIRST): value %s, dims=%s", rule.name, f.value, f.dims)
+                    else:
+                        # Check if this fact's concept has higher priority than existing
+                        existing_concept = candidate_facts[key][0].concept
+                        if f.concept == rule.concept and existing_concept != rule.concept:
+                            # This fact matches the primary concept, replace existing
+                            candidate_facts[key] = [f]
+                            logger.info("  REPLACED segment candidate '%s' with higher priority concept: value %s, dims=%s", rule.name, f.value, f.dims)
+                        else:
+                            logger.debug("  SKIPPED segment candidate '%s' - already have PICK_FIRST match", rule.name)
+                else:
+                    # For other strategies, collect all candidates
+                    candidate_facts[key].append(f)
+                    logger.info("  ADDED segment candidate '%s': value %s, dims=%s", rule.name, f.value, f.dims)
                 continue
 
             # Metric rules
@@ -306,35 +319,74 @@ def extract_all(index: XBRLIndex, cfg: CompanyConfig) -> Dict[str, dict]:
             if rule.filter_for_consolidated and not _is_consolidated(f, cfg.consolidated_members):
                 continue
 
+            # Memory optimization: For PICK_FIRST strategy, only collect first matching fact per alias priority
+            key = (year, rule.name, "metric")
             if rule.strategy == MetricStrategy.PICK_FIRST:
-                # place only if not already present
-                ydict = results.setdefault(year, {})
-                already_set = False
-                if rule.category and rule.category.startswith("balance_sheet."):
-                    bs_cat = rule.category.split(".", 1)[1]
-                    already_set = (
-                        rule.name in ydict.get("balance_sheet", {})
-                                           .get(bs_cat, {})
-                    )
+                if key not in candidate_facts:  # First match for this rule
+                    candidate_facts[key].append(f)
                 else:
-                    already_set = rule.name in ydict
+                    # Check if this fact's concept has higher priority than existing
+                    existing_concept = candidate_facts[key][0].concept
+                    existing_priority = rule.aliases.index(existing_concept) if existing_concept in rule.aliases else float('inf')
+                    new_priority = rule.aliases.index(f.concept) if f.concept in rule.aliases else float('inf')
+                    
+                    if new_priority < existing_priority:
+                        # This fact has higher priority, replace existing
+                        candidate_facts[key] = [f]
+                        logger.debug("  REPLACED metric candidate '%s' with higher priority alias: %s", rule.name, f.concept)
+                    else:
+                        logger.debug("  SKIPPED metric candidate '%s' - already have higher/equal priority match", rule.name)
+            else:
+                # For other strategies, collect all candidates
+                candidate_facts[key].append(f)
 
-                if not already_set:
-                    _place_value(results, year, rule, rule.name, f.value)
-                continue
-
-            # For all other strategies, accumulate
-            metric_acc[(year, rule.name)].update(f.value, date)
-
-    # Flush accumulators
-    logger.debug("Flushing %d accumulators", len(metric_acc))
-    for (year, name), acc in metric_acc.items():
-        # Retrieve the rule (multiple metrics could share a name, but we assume unique names)
-        rule = next(r for r in cfg.metrics if r.name == name)
-        val = acc.result(rule.strategy)
-        if val is None:
-            continue
-        _place_value(results, year, rule, name, val)
+    # Unified processing for both metrics and segments
+    logger.debug("Processing %d candidate fact groups", len(candidate_facts))
+    for (year, name, rule_type), candidates in candidate_facts.items():
+        logger.info("Processing %s '%s' for year %s with %d candidates", rule_type, name, year, len(candidates))
+        
+        # Find the corresponding rule based on type
+        if rule_type == "metric":
+            rule = next(r for r in cfg.metrics if r.name == name)
+            aliases = rule.aliases
+        else:  # segment
+            rule = next(r for r in cfg.segments if r.name == name)
+            aliases = [rule.concept]  # Segments use concept instead of aliases list
+        
+        final_value: float | None = None
+        
+        if rule.strategy == MetricStrategy.PICK_FIRST:
+            # Priority-based selection: find fact with highest-priority alias
+            found_fact = None
+            for alias in aliases:
+                for fact in candidates:
+                    if fact.concept == alias:
+                        found_fact = fact
+                        break
+                if found_fact:
+                    break
+            if found_fact:
+                final_value = found_fact.value
+                logger.info("  PICK_FIRST selected value: %s from concept %s", final_value, found_fact.concept)
+        else:
+            # Use accumulator for SUM, AVG, MAX, MIN, LATEST_IN_YEAR strategies
+            acc = Accumulator()
+            for fact in candidates:
+                date = fact.period_key[1] or fact.period_key[0] or ""
+                acc.update(fact.value, date)
+                logger.info("  Adding to accumulator: value=%s, date=%s", fact.value, date)
+            final_value = acc.result(rule.strategy)
+            logger.info("  Strategy %s final result: %s", rule.strategy, final_value)
+        
+        # Place the final value in results
+        if final_value is not None:
+            if rule_type == "metric":
+                _place_value(results, year, rule, name, final_value)
+            else:  # segment
+                ydict = results.setdefault(year, {})
+                segdict = ydict.setdefault("segments", {})
+                segdict[name] = final_value
+                logger.info("  FINAL segment '%s' for year %s: %s", name, year, final_value)
 
     logger.info("Extraction complete: processed %d facts, matched %d facts, extracted data for %d years", 
                 facts_processed, facts_matched, len(results))

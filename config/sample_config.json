@@ -54,6 +54,7 @@
           "name": "personal_lines_agency",
           "concept": "us-gaap:Revenues",
           "required_dims": {
+            "srt:ProductOrServiceAxis": "pgr:UnderwritingOperationsMember",
             "us-gaap:StatementBusinessSegmentsAxis": "pgr:PersonalLinesSegmentMember",
             "us-gaap:SubsegmentsAxis": "pgr:AgencyChannelMember"
           }
@@ -62,6 +63,7 @@
           "name": "personal_lines_direct",
           "concept": "us-gaap:Revenues",
           "required_dims": {
+            "srt:ProductOrServiceAxis": "pgr:UnderwritingOperationsMember",
             "us-gaap:StatementBusinessSegmentsAxis": "pgr:PersonalLinesSegmentMember",
             "us-gaap:SubsegmentsAxis": "pgr:DirectChannelMember"
           }
@@ -70,6 +72,8 @@
           "name": "commercial_lines",
           "concept": "us-gaap:Revenues",
           "required_dims": {
+            "srt:ConsolidationItemsAxis": "us-gaap:OperatingSegmentsMember",
+            "srt:ProductOrServiceAxis": "pgr:UnderwritingOperationsMember",
             "us-gaap:StatementBusinessSegmentsAxis": "pgr:CommercialLinesSegmentMember"
           }
         },
@@ -77,6 +81,8 @@
           "name": "property_lines",
           "concept": "us-gaap:Revenues",
           "required_dims": {
+            "srt:ConsolidationItemsAxis": "us-gaap:OperatingSegmentsMember",
+            "srt:ProductOrServiceAxis": "pgr:UnderwritingOperationsMember",
             "us-gaap:StatementBusinessSegmentsAxis": "pgr:PropertySegmentMember"
           }
         }

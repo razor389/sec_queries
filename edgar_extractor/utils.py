@@ -42,16 +42,32 @@ def _parse_metrics(merged: Dict[str, Any]) -> List[MetricRule]:
                     "strategy": "pick_first",
                 })
 
-    # Balance sheet legacy block: generate metric rules as latest_in_year
+    # Balance sheet concepts: support both legacy list format and new dict format with years
     bs_conf = merged.get("balance_sheet_concepts", {})
-    for cat, aliases in bs_conf.items():
-        for alias in aliases:
-            metrics_conf.append({
-                "name": alias,
-                "aliases": [alias],
-                "strategy": "latest_in_year",
-                "category": f"balance_sheet.{cat}",
-            })
+    for cat, config in bs_conf.items():
+        # Legacy format: list of aliases
+        if isinstance(config, list):
+            for alias in config:
+                metrics_conf.append({
+                    "name": alias,
+                    "aliases": [alias],
+                    "strategy": "latest_in_year",
+                    "category": f"balance_sheet.{cat}",
+                })
+        # New format: dict with aliases and optional years
+        elif isinstance(config, dict):
+            aliases = config.get("aliases", [])
+            years = config.get("years")
+            for alias in aliases:
+                rule = {
+                    "name": alias,
+                    "aliases": [alias],
+                    "strategy": "latest_in_year",
+                    "category": f"balance_sheet.{cat}",
+                }
+                if years:
+                    rule["years"] = years
+                metrics_conf.append(rule)
 
     for m in metrics_conf:
         out.append(
@@ -63,6 +79,7 @@ def _parse_metrics(merged: Dict[str, Any]) -> List[MetricRule]:
                 units=m.get("units"),
                 period_type=m.get("period_type"),
                 category=m.get("category"),
+                years=m.get("years"),
             )
         )
     return out

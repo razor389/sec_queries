@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from edgar_extractor import SECClient, load_company_config, XBRLIndex, extract_all
+from edgar_extractor.metrics import _report_missing_data
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s %(name)s:%(lineno)d %(message)s')
 logger = logging.getLogger(__name__)
@@ -172,6 +173,22 @@ def extract_multi_year_data(ticker: str, form: str, config_path: str, target_yea
     missing_years = sorted(years_needed) if years_needed else []
     if missing_years:
         logger.warning("Could not find data for years: %s", missing_years)
+    
+    # Report missing data for extracted years
+    extracted_years = [int(year) for year in combined_results.keys()]
+    if extracted_years:
+        missing_data = _report_missing_data(combined_results, cfg, extracted_years)
+        
+        # Print missing data report
+        if any(missing_data.values()):
+            print("\n⚠️  MISSING DATA REPORT:")
+            for category_type, categories in missing_data.items():
+                if categories:
+                    print(f"\n{category_type.upper()}:")
+                    for category_name, missing_years_list in categories.items():
+                        print(f"  • {category_name}: missing in years {missing_years_list}")
+        else:
+            print("\n✅ All configured categories have data for all extracted years")
     
     logger.info("Multi-year extraction complete: extracted %d years", len(combined_results))
     return combined_results, year_to_filing

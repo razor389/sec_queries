@@ -133,6 +133,67 @@ def _build_concept_to_rules(cfg: CompanyConfig) -> Dict[str, List[MetricRule | S
     return mapping
 
 
+def _report_missing_data(results: Dict[str, dict], cfg: CompanyConfig, target_years: List[int]) -> Dict[str, Dict[str, List[int]]]:
+    """
+    Analyze results to identify which categories are missing data for which years.
+    
+    Returns:
+        Dict mapping category types to categories to missing years.
+        Example: {
+            "metrics": {"revenues": [2018, 2019]},
+            "segments": {"term_life": [2020]},
+            "balance_sheet": {"fixed_income": [2018, 2019, 2020]}
+        }
+    """
+    missing = {"metrics": {}, "segments": {}, "balance_sheet": {}}
+    
+    # Check metrics
+    for rule in cfg.metrics:
+        if rule.category and rule.category.startswith("balance_sheet."):
+            # Balance sheet metric
+            bs_cat = rule.category.split(".", 1)[1]
+            for year in target_years:
+                # Only check years that this rule applies to
+                if not year_matches_range(year, rule.years):
+                    continue
+                year_str = str(year)
+                if (year_str not in results or 
+                    "balance_sheet" not in results[year_str] or 
+                    bs_cat not in results[year_str]["balance_sheet"] or
+                    rule.name not in results[year_str]["balance_sheet"][bs_cat]):
+                    missing["balance_sheet"].setdefault(bs_cat, []).append(year)
+        else:
+            # Regular metric
+            for year in target_years:
+                # Only check years that this rule applies to
+                if not year_matches_range(year, rule.years):
+                    continue
+                year_str = str(year)
+                if year_str not in results or rule.name not in results[year_str]:
+                    missing["metrics"].setdefault(rule.name, []).append(year)
+    
+    # Check segments
+    for rule in cfg.segments:
+        for year in target_years:
+            # Only check years that this rule applies to
+            if not year_matches_range(year, rule.years):
+                continue
+            year_str = str(year)
+            if (year_str not in results or 
+                "segments" not in results[year_str] or 
+                rule.name not in results[year_str]["segments"]):
+                missing["segments"].setdefault(rule.name, []).append(year)
+    
+    # Remove empty categories and deduplicate
+    for category in missing:
+        for name in list(missing[category].keys()):
+            missing[category][name] = sorted(list(set(missing[category][name])))
+            if not missing[category][name]:
+                del missing[category][name]
+    
+    return missing
+
+
 def extract_all(index: XBRLIndex, cfg: CompanyConfig) -> Dict[str, dict]:
     """
     Single-pass extraction over all facts; supports multiple strategies and

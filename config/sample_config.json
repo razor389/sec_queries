@@ -132,7 +132,53 @@
           },
           "years": "2016-2018"
         }
-      ]
+      ],
+      "balance_sheet_concepts": {
+        "fixed_income": {
+          "aliases": ["us-gaap:AvailableForSaleSecuritiesDebtSecurities"],
+          "years": "2023-2024"
+        },
+        "common_equities": {
+          "aliases": ["us-gaap:EquitySecuritiesFvNi"],
+          "years": "2023-2024"
+        },
+        "accrued_investment_income": {
+          "aliases": ["us-gaap:AccruedInvestmentIncomeReceivable"],
+          "years": "2023-2024"
+        },
+        "reinsurance_recoverables": {
+          "aliases": ["us-gaap:ReinsuranceRecoverables"],
+          "years": "2023-2024"
+        },
+        "intangibles": {
+          "aliases": ["us-gaap:IntangibleAssetsNetExcludingGoodwill"],
+          "years": "2023-2024"
+        },
+        "other_assets": {
+          "aliases": ["us-gaap:OtherAssets"],
+          "years": "2023-2024"
+        },
+        "liabilities": {
+          "aliases": ["us-gaap:Liabilities"],
+          "years": "2023-2024"
+        },
+        "forex_adjustments": {
+          "aliases": ["us-gaap:AccumulatedOtherComprehensiveIncomeLossForeignCurrencyTranslationAdjustmentNetOfTax"],
+          "years": "2023-2024"
+        },
+        "unrealized_cap_gain": {
+          "aliases": ["us-gaap:AccumulatedOtherComprehensiveIncomeLossAvailableForSaleSecuritiesAdjustmentNetOfTax"],
+          "years": "2023-2024"
+        },
+        "property_and_equipment": {
+          "aliases": ["us-gaap:PropertyPlantAndEquipmentNet"],
+          "years": "2023-2024"
+        },
+        "income_taxes": {
+          "aliases": ["us-gaap:DeferredTaxAssetsLiabilitiesNet"],
+          "years": "2023-2024"
+        }
+      }
     }
   }
 }

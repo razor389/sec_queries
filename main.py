@@ -43,23 +43,28 @@ def _is_year_data_complete(year: str, data: dict, cfg) -> bool:
 
 def _get_actual_filing_url_for_year(client: 'SECClient', cik: str, year: int, form: str) -> str:
     """
-    Get the actual filing URL for a specific year (not the filing we extracted data from).
-    This finds the original filing for that year so users can inspect the source.
+    Get the original filing URL for a specific data year.
+    For 10-K filings, year N data is typically filed in year N+1.
     """
     try:
         # Get more filings to ensure we find the right year
-        filings = client.list_filings(cik, form=form, count=20)
+        filings = client.list_filings(cik, form=form, count=30)
         
-        # Look for a filing that matches the target year
-        target_year_str = str(year)
-        for filing in filings:
-            filing_date = filing.get('date', '')
-            if filing_date.startswith(target_year_str):
-                return filing['filing_url']
+        # For 10-K filings, year N data is typically filed in year N+1
+        # So look for filings in year+1 first, then year, then year+2
+        search_years = [year + 1, year, year + 2]
         
-        # If no exact match, return first filing (fallback)
+        for search_year in search_years:
+            search_year_str = str(search_year)
+            for filing in filings:
+                filing_date = filing.get('date', '')
+                if filing_date.startswith(search_year_str):
+                    logger.debug("Found filing for year %d data: %s (filed %s)", year, filing['accession'], filing_date)
+                    return filing['filing_url']
+        
+        # If no match found, return first filing as fallback
         if filings:
-            logger.warning("Could not find exact filing for year %d, using fallback", year)
+            logger.warning("Could not find specific filing for year %d data, using fallback", year)
             return filings[0]['filing_url']
         
         return "Unknown"

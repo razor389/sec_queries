@@ -4,3 +4,4 @@ repomix-output.xml
 edgar_extractor/__pycache__
 .env
 sample.xml
+output/

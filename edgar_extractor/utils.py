@@ -1,8 +1,11 @@
 import json
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union
 
-from .config_schema import CompanyConfig, SegmentRule, MetricRule, MetricStrategy
+from .config_schema import (
+    CompanyConfig, SegmentRule, MetricRule, MetricStrategy,
+    NewCompanyConfig, SegmentationRule, MetricConfig
+)
 
 
 def _json_load_strict(path: Path):
@@ -26,6 +29,95 @@ def _merge(a: dict, b: dict) -> dict:
     return out
 
 
+def _convert_new_to_legacy_format(new_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert new config format to legacy format for backward compatibility."""
+    legacy_config = {}
+    
+    # Handle profit_desc_metrics -> metrics + concept_aliases
+    profit_metrics = new_config.get("profit_desc_metrics", {})
+    legacy_config["concept_aliases"] = {}
+    legacy_config["metrics"] = []
+    
+    for name, config in profit_metrics.items():
+        if isinstance(config, list):
+            # Simple list format
+            legacy_config["concept_aliases"][name] = config
+        elif isinstance(config, str):
+            # Single string format
+            legacy_config["concept_aliases"][name] = [config]
+        elif isinstance(config, dict):
+            # Complex format with years, strategy, etc.
+            aliases = config.get("aliases", [])
+            legacy_config["metrics"].append({
+                "name": name,
+                "aliases": aliases,
+                "strategy": config.get("strategy", "pick_first"),
+                "required_dims": config.get("required_dims"),
+                "units": config.get("units"),
+                "period_type": config.get("period_type"),
+                "filter_for_consolidated": config.get("filter_for_consolidated", False),
+                "years": config.get("years")
+            })
+    
+    # Handle balance_sheet_metrics -> balance_sheet_concepts
+    balance_metrics = new_config.get("balance_sheet_metrics", {})
+    legacy_config["balance_sheet_concepts"] = {}
+    
+    for name, config in balance_metrics.items():
+        if isinstance(config, list):
+            # Simple list format
+            legacy_config["balance_sheet_concepts"][name] = config
+        elif isinstance(config, str):
+            # Single string format  
+            legacy_config["balance_sheet_concepts"][name] = [config]
+        elif isinstance(config, dict):
+            # Complex format with years
+            legacy_config["balance_sheet_concepts"][name] = config
+    
+    # Handle segmentation
+    segmentation = new_config.get("segmentation", [])
+    if isinstance(segmentation, dict) and "config" in segmentation:
+        # Extract segmentation config
+        seg_config = segmentation["config"]
+        legacy_config["consolidated_members"] = seg_config.get("consolidated_members", [])
+        legacy_config["axis_aliases"] = seg_config.get("axis_aliases", {})
+        legacy_config["segments"] = []
+    elif isinstance(segmentation, list):
+        # List of segment rules
+        legacy_config["segments"] = []
+        for seg in segmentation:
+            legacy_config["segments"].append({
+                "name": seg["name"],
+                "concept": seg["tag"],
+                "required_dims": seg.get("explicitMembers", {}),
+                "years": seg.get("years"),
+                "strategy": seg.get("strategy", "pick_first"),
+                "units": seg.get("units"),
+                "period_type": seg.get("period_type"),
+                "filter_for_consolidated": seg.get("filter_for_consolidated", False)
+            })
+    
+    # Copy other fields as-is
+    for key in ["balance_sheet_categories"]:
+        if key in new_config:
+            legacy_config[key] = new_config[key]
+    
+    return legacy_config
+
+
+def _detect_config_format(config_data: Dict[str, Any]) -> str:
+    """Detect whether config is in new or legacy format."""
+    # Check for new format indicators
+    if "profit_desc_metrics" in config_data or "balance_sheet_metrics" in config_data:
+        return "new"
+    # Check for legacy format indicators
+    elif "metrics" in config_data or "concept_aliases" in config_data:
+        return "legacy"
+    else:
+        # Default to legacy for backward compatibility
+        return "legacy"
+
+
 def _parse_metrics(merged: Dict[str, Any]) -> List[MetricRule]:
     metrics_conf = merged.get("metrics", [])
     out: List[MetricRule] = []
@@ -35,7 +127,7 @@ def _parse_metrics(merged: Dict[str, Any]) -> List[MetricRule]:
     if concept_aliases:
         for name, aliases in concept_aliases.items():
             # Only include if not supplied in metrics already
-            if not any(m.name == name for m in metrics_conf):
+            if not any(m.get("name") == name for m in metrics_conf):
                 metrics_conf.append({
                     "name": name,
                     "aliases": aliases,
@@ -95,6 +187,16 @@ def load_company_config(path: str, ticker: str) -> CompanyConfig:
     default_cfg = data.get("default", {})
     companies = data.get("companies", {})
     comp_cfg = companies.get(ticker, {})
+
+    # Detect config format and convert if needed
+    default_format = _detect_config_format(default_cfg)
+    comp_format = _detect_config_format(comp_cfg)
+    
+    # Convert new format to legacy format for backward compatibility
+    if default_format == "new":
+        default_cfg = _convert_new_to_legacy_format(default_cfg)
+    if comp_format == "new":
+        comp_cfg = _convert_new_to_legacy_format(comp_cfg)
 
     merged = _merge(default_cfg, comp_cfg)
 

@@ -36,6 +36,55 @@ class MetricStrategy(str, Enum):
     AVG = "avg"
 
 
+# New schema classes for the updated config format
+@dataclass
+class MetricConfig:
+    """Configuration for a metric with optional year constraints."""
+    aliases: List[str] = field(default_factory=list)
+    years: Optional[str] = None
+    strategy: MetricStrategy = MetricStrategy.PICK_FIRST
+    required_dims: Optional[Dict[str, Union[str, List[str]]]] = None
+    units: Optional[List[str]] = None
+    period_type: Optional[str] = None
+    filter_for_consolidated: bool = False
+
+
+@dataclass
+class SegmentationRule:
+    """Configuration for segment extraction."""
+    name: str
+    tag: str  # The XBRL concept to extract
+    explicitMembers: Dict[str, str] = field(default_factory=dict)
+    years: Optional[str] = None
+    strategy: MetricStrategy = MetricStrategy.PICK_FIRST
+    units: Optional[List[str]] = None
+    period_type: Optional[str] = None
+    filter_for_consolidated: bool = False
+
+
+@dataclass
+class SegmentationConfig:
+    """Configuration for segmentation settings."""
+    config: Dict[str, Union[List[str], Dict[str, List[str]]]] = field(default_factory=dict)
+
+
+@dataclass
+class NewCompanyConfig:
+    """New format company configuration."""
+    profit_desc_metrics: Dict[str, Union[List[str], str]] = field(default_factory=dict)
+    balance_sheet_metrics: Dict[str, Union[List[str], str, MetricConfig]] = field(default_factory=dict)
+    segmentation: Union[List[SegmentationRule], SegmentationConfig] = field(default_factory=list)
+    balance_sheet_categories: Dict[str, List[str]] = field(default_factory=dict)
+
+
+@dataclass
+class NewGlobalConfig:
+    """New format global configuration."""
+    default: NewCompanyConfig
+    companies: Dict[str, NewCompanyConfig]
+
+
+# Legacy schema classes (preserved for backward compatibility)
 @dataclass
 class MetricRule:
     name: str

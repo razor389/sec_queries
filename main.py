@@ -1,7 +1,9 @@
 import argparse
 import logging
 import os
+import json
 from pathlib import Path
+from datetime import datetime
 
 from edgar_extractor import SECClient, load_company_config, XBRLIndex, extract_all
 from edgar_extractor.metrics import _report_missing_data
@@ -420,6 +422,127 @@ def debug_one_filing(ticker: str, accession: str | None, form: str, config_path:
             print(k, f.value)
 
 
+def save_extraction_results_to_json(ticker: str, results: dict, year_to_filing: dict, output_dir: str = "output") -> None:
+    """
+    Save multi-year extraction results organized by config structure.
+    
+    Creates: output/{ticker}_multi_year_extraction.json
+    
+    Format organized by config categories:
+    {
+        "2024": {
+            "filing_url": "https://www.sec.gov/Archives/...",
+            "profit_desc_metrics": {
+                "revenues": 123.0,
+                "investment_income": 456.0,
+                "losses_and_expenses": null,
+                "acquisition_costs": 789.0
+            },
+            "balance_sheet_metrics": {
+                "assets": 123000.0,
+                "liabilities": 456000.0,
+                "cash": 100000.0
+            },
+            "segmentation": {
+                "personal_lines_agency": 111.0,
+                "personal_lines_direct": 222.0
+            }
+        }
+    }
+    """
+    # Create output directory
+    output_path = Path(output_dir)
+    output_path.mkdir(exist_ok=True)
+    
+    # Determine year range for filename
+    years = sorted([int(year) for year in results.keys()])
+    year_range = f"{years[0]}-{years[-1]}" if len(years) > 1 else str(years[0])
+    
+    # Create filename
+    filename = f"{ticker.upper()}_{year_range}_extraction.json"
+    filepath = output_path / filename
+    
+    # Reorganize results by config structure
+    organized_results = {}
+    for year_str in sorted(results.keys(), key=int):
+        year_int = int(year_str)
+        year_data = results[year_str]
+        
+        # Get filing URL for this year
+        filing_info = year_to_filing.get(year_str, {})
+        filing_url = filing_info.get('actual_filing_url', filing_info.get('filing_url', 'Unknown'))
+        
+        organized_year = {
+            "filing_url": filing_url,
+            "profit_desc_metrics": _extract_profit_desc_metrics(year_data),
+            "balance_sheet_metrics": _extract_balance_sheet_metrics(year_data), 
+            "segmentation": _extract_segmentation_metrics(year_data)
+        }
+        
+        organized_results[year_int] = organized_year
+    
+    # Save to JSON
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(organized_results, f, indent=2, ensure_ascii=False)
+    
+    logger.info(f"✅ Saved {len(results)} years of extraction data to {filepath}")
+    print(f"💾 Saved extraction results to: {filepath}")
+
+
+def _extract_profit_desc_metrics(year_data: dict) -> dict:
+    """Extract profit description metrics from year data."""
+    profit_metrics = {}
+    
+    # Define the profit metrics we're looking for (based on config structure)
+    profit_metric_keys = [
+        "revenues", "gross_revenues", "investment_income", 
+        "losses_and_expenses", "acquisition_costs", "underwriting_expenses",
+        "taxes", "interest_expenses"
+    ]
+    
+    for key in profit_metric_keys:
+        profit_metrics[key] = year_data.get(key)
+    
+    return profit_metrics
+
+
+def _extract_balance_sheet_metrics(year_data: dict) -> dict:
+    """Extract balance sheet metrics from year data, flattening the structure."""
+    balance_sheet = year_data.get("balance_sheet", {})
+    balance_metrics = {}
+    
+    # Extract main category totals first
+    main_categories = ["assets", "liabilities", "shareholders_equity"]
+    for category in main_categories:
+        category_data = balance_sheet.get(category, {})
+        if category_data:
+            # Find the main total value for this category
+            main_key = f"us-gaap:{category.title().replace('_', '')}"
+            if "shareholders_equity" in category:
+                main_key = "us-gaap:StockholdersEquity"
+            elif "assets" in category:
+                main_key = "us-gaap:Assets"
+            elif "liabilities" in category:
+                main_key = "us-gaap:Liabilities"
+            
+            balance_metrics[category] = category_data.get(main_key)
+    
+    # Extract detailed balance sheet items (flattened)
+    for category_name, category_data in balance_sheet.items():
+        if category_name not in main_categories and isinstance(category_data, dict):
+            # For subcategories, extract the first/main value
+            if category_data:
+                first_key = list(category_data.keys())[0]
+                balance_metrics[category_name] = category_data[first_key]
+    
+    return balance_metrics
+
+
+def _extract_segmentation_metrics(year_data: dict) -> dict:
+    """Extract segmentation data from year data."""
+    return year_data.get("segments", {})
+
+
 def cli():
     parser = argparse.ArgumentParser(description="EDGAR XBRL extractor")
     parser.add_argument("ticker", help="Ticker symbol, e.g., PGR")
@@ -430,6 +553,8 @@ def cli():
     parser.add_argument("--years", type=int, default=7, help="Target number of years to extract")
     parser.add_argument("--dump-facts", action="store_true")
     parser.add_argument("--dry-run", action="store_true", help="Simulate extraction and show detailed matching logs without saving.")
+    parser.add_argument("--save-json", action="store_true", default=True, help="Save extraction results to JSON files")
+    parser.add_argument("--output-dir", default="output", help="Directory to save JSON output files")
     return parser.parse_args()
 
 
@@ -454,3 +579,7 @@ if __name__ == "__main__":
             print(f"📄 Filing URL: {filing_url}")
         
         print(f"\nExtracted data for {len(results)} years: {sorted(results.keys())}")
+        
+        # Save to JSON if requested
+        if args.save_json:
+            save_extraction_results_to_json(args.ticker, results, year_to_filing, args.output_dir)

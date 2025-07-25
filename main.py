@@ -209,7 +209,7 @@ def extract_multi_year_data(ticker: str, form: str, config_path: str, target_yea
     return combined_results, year_to_filing
 
 
-def debug_one_filing(ticker: str, accession: str | None, form: str, config_path: str, dry_run: bool = False):
+def debug_one_filing(ticker: str, accession: str | None, form: str, config_path: str, dry_run: bool = False, dump_facts: bool = False):
     # Enable debug logging and show dry-run notification if in dry-run mode  
     if dry_run:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -260,7 +260,7 @@ def debug_one_filing(ticker: str, accession: str | None, form: str, config_path:
     for year, data in sorted(results.items()):
         print(year, data)
     
-    if args.dump_facts:
+    if dump_facts:
         print("\n--- ALL FACT KEYS (concept, period, dims) ---")
         for k, f in index.facts.items():
             print(k, f.value)
@@ -279,7 +279,7 @@ def debug_one_filing(ticker: str, accession: str | None, form: str, config_path:
         concepts = set(f.concept for f in year_facts)
         print(f"{year}: {len(year_facts)} facts, concepts include: {sorted(list(concepts))[:5]}...")
 
-    if args.dump_facts:
+    if dump_facts:
         print("\n--- ALL FACT KEYS (concept, period, dims) ---")
         for k, f in index.facts.items():
             print(k, f.value)
@@ -304,7 +304,7 @@ if __name__ == "__main__":
     if args.accession or args.single_filing:
         # Single filing mode (original functionality)
         logger.info("Running in single-filing mode")
-        debug_one_filing(args.ticker, args.accession, args.form, args.config, args.dry_run)
+        debug_one_filing(args.ticker, args.accession, args.form, args.config, args.dry_run, args.dump_facts)
     else:
         # Multi-year mode (new default)
         logger.info("Running in multi-year mode")

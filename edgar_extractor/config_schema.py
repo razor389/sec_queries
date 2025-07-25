@@ -41,7 +41,7 @@ class MetricRule:
     name: str
     aliases: List[str]
     strategy: MetricStrategy = MetricStrategy.PICK_FIRST
-    required_dims: Dict[str, Union[str, List[str]]] = field(default_factory=dict)
+    required_dims: Optional[Dict[str, Union[str, List[str]]]] = None
     units: Optional[List[str]] = None
     period_type: Optional[str] = None          # "duration" | "instant"
     category: Optional[str] = None             # e.g. "balance_sheet.assets"
@@ -53,10 +53,11 @@ class MetricRule:
 class SegmentRule:
     name: str
     concept: str
-    required_dims: Dict[str, Union[str, List[str]]]
+    required_dims: Optional[Dict[str, Union[str, List[str]]]] = None
     units: Optional[List[str]] = None
     period_type: Optional[str] = None
     strategy: MetricStrategy = MetricStrategy.PICK_FIRST
+    filter_for_consolidated: bool = False      # NEW: enforce consolidated-members filter
     years: Optional[str] = None                # e.g. "2020-2024" or "2018-2021"
 
 

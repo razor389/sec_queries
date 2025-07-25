@@ -75,7 +75,7 @@ def _parse_metrics(merged: Dict[str, Any]) -> List[MetricRule]:
                 name=m["name"],
                 aliases=m["aliases"],
                 strategy=MetricStrategy(m.get("strategy", "pick_first")),
-                required_dims=m.get("required_dims", {}),
+                required_dims=m.get("required_dims"),
                 units=m.get("units"),
                 period_type=m.get("period_type"),
                 category=m.get("category"),

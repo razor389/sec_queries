@@ -169,22 +169,32 @@ def _report_missing_data(results: Dict[str, dict], cfg: CompanyConfig, target_ye
     """
     missing = {"metrics": {}, "segments": {}, "balance_sheet": {}}
     
-    # Check metrics
+    # Check balance sheet categories - group by category and check if any data exists
+    balance_sheet_categories = {}
     for rule in cfg.metrics:
         if rule.category and rule.category.startswith("balance_sheet."):
-            # Balance sheet metric
             bs_cat = rule.category.split(".", 1)[1]
-            for year in target_years:
-                # Only check years that this rule applies to
-                if not year_matches_range(year, rule.years):
-                    continue
-                year_str = str(year)
-                if (year_str not in results or 
-                    "balance_sheet" not in results[year_str] or 
-                    bs_cat not in results[year_str]["balance_sheet"] or
-                    rule.name not in results[year_str]["balance_sheet"][bs_cat]):
-                    missing["balance_sheet"].setdefault(bs_cat, []).append(year)
-        else:
+            balance_sheet_categories.setdefault(bs_cat, []).append(rule)
+    
+    # For each balance sheet category, check if it has any data
+    for bs_cat, rules in balance_sheet_categories.items():
+        for year in target_years:
+            year_str = str(year)
+            # Check if any rule for this category applies to this year
+            applicable_rules = [r for r in rules if year_matches_range(year, r.years)]
+            if not applicable_rules:
+                continue  # No rules apply to this year for this category
+                
+            # Check if the category exists and has any data
+            if (year_str not in results or 
+                "balance_sheet" not in results[year_str] or 
+                bs_cat not in results[year_str]["balance_sheet"] or
+                not results[year_str]["balance_sheet"][bs_cat]):
+                missing["balance_sheet"].setdefault(bs_cat, []).append(year)
+    
+    # Check regular metrics
+    for rule in cfg.metrics:
+        if not rule.category or not rule.category.startswith("balance_sheet."):
             # Regular metric
             for year in target_years:
                 # Only check years that this rule applies to

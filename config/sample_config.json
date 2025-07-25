@@ -205,6 +205,22 @@
           "aliases": ["us-gaap:Liabilities"],
           "years": "2023-2024"
         },
+        "accounts_payable": {
+          "aliases": ["us-gaap:LiabilityForClaimsAndClaimsAdjustmentExpense"],
+          "years": "2018-2024"
+        },
+        "unearned_premiums": {
+          "aliases": ["us-gaap:DeferredRevenueCurrent"],
+          "years": "2018-2024"
+        },
+        "short_term": {
+          "aliases": ["us-gaap:OtherShortTermInvestments"],
+          "years": "2018-2024"
+        },
+        "common_stock": {
+          "aliases": ["us-gaap:CommonStockValue"],
+          "years": "2018-2024"
+        },
         "forex_adjustments": {
           "aliases": ["us-gaap:AccumulatedOtherComprehensiveIncomeLossForeignCurrencyTranslationAdjustmentNetOfTax"],
           "years": "2023-2024"

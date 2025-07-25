@@ -41,6 +41,84 @@ def _is_year_data_complete(year: str, data: dict, cfg) -> bool:
     return True
 
 
+def _count_data_items(data: dict) -> int:
+    """Count the total number of data items in a year's extracted data"""
+    count = 0
+    for key, value in data.items():
+        if key == "segments" and isinstance(value, dict):
+            count += len(value)
+        elif key == "balance_sheet" and isinstance(value, dict):
+            for bs_category in value.values():
+                if isinstance(bs_category, dict):
+                    count += len(bs_category)
+        else:
+            count += 1
+    return count
+
+
+def _find_missing_data(year_data: dict, cfg, year: int) -> dict:
+    """Find what data is missing for a specific year based on configuration"""
+    missing = {"metrics": [], "segments": [], "balance_sheet": {}}
+    
+    # Check for missing segments
+    segments_data = year_data.get("segments", {})
+    for segment_rule in cfg.segments:
+        from edgar_extractor.config_schema import year_matches_range
+        if year_matches_range(year, segment_rule.years):
+            if segment_rule.name not in segments_data:
+                missing["segments"].append(segment_rule.name)
+    
+    # Check for missing metrics (basic check for key metrics)
+    if "revenues" not in year_data:
+        missing["metrics"].append("revenues")
+    
+    # Check for missing balance sheet categories
+    balance_sheet = year_data.get("balance_sheet", {})
+    if not balance_sheet:
+        missing["balance_sheet"]["any"] = True
+    else:
+        # Check if assets are missing
+        if "assets" not in balance_sheet:
+            missing["balance_sheet"]["assets"] = True
+    
+    return missing
+
+
+def _merge_missing_data(primary_data: dict, additional_data: dict, missing: dict, year: int) -> tuple[dict, list]:
+    """Merge missing data from additional_data into primary_data"""
+    merged_data = primary_data.copy()
+    filled_items = []
+    
+    # Fill missing segments
+    if missing["segments"]:
+        additional_segments = additional_data.get("segments", {})
+        primary_segments = merged_data.setdefault("segments", {})
+        
+        for missing_segment in missing["segments"]:
+            if missing_segment in additional_segments:
+                primary_segments[missing_segment] = additional_segments[missing_segment]
+                filled_items.append(f"segment:{missing_segment}")
+    
+    # Fill missing metrics
+    for missing_metric in missing["metrics"]:
+        if missing_metric in additional_data:
+            merged_data[missing_metric] = additional_data[missing_metric]
+            filled_items.append(f"metric:{missing_metric}")
+    
+    # Fill missing balance sheet data
+    if missing["balance_sheet"]:
+        additional_bs = additional_data.get("balance_sheet", {})
+        if additional_bs:
+            primary_bs = merged_data.setdefault("balance_sheet", {})
+            
+            # For now, just fill missing assets
+            if "assets" in missing["balance_sheet"] and "assets" in additional_bs:
+                primary_bs["assets"] = additional_bs["assets"]
+                filled_items.append("balance_sheet:assets")
+    
+    return merged_data, filled_items
+
+
 def _get_actual_filing_url_for_year(client: 'SECClient', cik: str, year: int, form: str) -> str:
     """
     Get the original filing URL for a specific data year.
@@ -75,13 +153,14 @@ def _get_actual_filing_url_for_year(client: 'SECClient', cik: str, year: int, fo
 
 def extract_multi_year_data(ticker: str, form: str, config_path: str, target_years: int = 7) -> tuple[dict, dict]:
     """
-    Extract data for multiple years by fetching filings that contain comparative data.
-    Each filing typically contains 3-4 years of data.
+    Extract data for multiple years using year-centric approach.
+    For each target year, we find the most authoritative filing (typically filed in year+1)
+    and use that as the primary source, allowing later filings to update/correct if needed.
     
     Returns:
         tuple: (results_dict, year_to_filing_dict)
     """
-    logger.info("Starting multi-year extraction for ticker=%s, target_years=%d", ticker, target_years)
+    logger.info("Starting year-centric multi-year extraction for ticker=%s, target_years=%d", ticker, target_years)
     cfg = load_company_config(config_path, ticker)
     client = SECClient(USER_AGENT)
     cik = client.get_cik_from_ticker(ticker)
@@ -89,18 +168,37 @@ def extract_multi_year_data(ticker: str, form: str, config_path: str, target_yea
     combined_results = {}
     year_to_filing = {}  # Track which filing each year came from
     current_year = 2024
-    years_needed = set(range(current_year - target_years + 1, current_year + 1))
-    logger.info("Target years: %s", sorted(years_needed))
+    target_year_list = list(range(current_year - target_years + 1, current_year + 1))
+    logger.info("Target years: %s", target_year_list)
     
     # Get available filings
-    filings = client.list_filings(cik, form=form, count=10)
+    filings = client.list_filings(cik, form=form, count=15)  # Get more filings to ensure coverage
     logger.info("Found %d available filings", len(filings))
     
-    for i, filing in enumerate(filings):
-        if not years_needed:  # We have all the years we need
-            break
+    # Create a year-to-authoritative-filing mapping
+    # For 10-K filings, year N data is typically filed in year N+1
+    year_to_primary_filing = {}
+    filing_to_info = {}
+    
+    for filing in filings:
+        filing_date = filing.get('date', '')
+        if filing_date:
+            filing_year = int(filing_date[:4])
+            # This filing likely contains data for year (filing_year - 1)
+            data_year = filing_year - 1
+            if data_year in target_year_list and data_year not in year_to_primary_filing:
+                year_to_primary_filing[data_year] = filing
+                filing_to_info[filing['accession']] = filing
+                logger.info("Mapped year %d to primary filing %s (filed %s)", data_year, filing['accession'], filing_date)
+    
+    # Process years in chronological order (oldest first) using their primary filings
+    for year in sorted(target_year_list):
+        if year not in year_to_primary_filing:
+            logger.warning("No primary filing found for year %d", year)
+            continue
             
-        logger.info("Processing filing %d: %s (date: %s)", i+1, filing['accession'], filing.get('date', 'unknown'))
+        filing = year_to_primary_filing[year]
+        logger.info("Processing year %d from primary filing %s (date: %s)", year, filing['accession'], filing.get('date', 'unknown'))
         
         try:
             # Extract data from this filing
@@ -109,56 +207,91 @@ def extract_multi_year_data(ticker: str, form: str, config_path: str, target_yea
             index = XBRLIndex(xml_text)
             results = extract_all(index, cfg)
             
-            years_added = []
-            years_updated = []
-            # Add new years to combined results (only if we need them and don't have them, or if we can improve incomplete data)
-            for year, data in results.items():
-                year_int = int(year)
-                if year_int in years_needed:
-                    # Check if we already have this year
-                    if year in combined_results:
-                        # We have this year, but is our existing data complete?
-                        if not _is_year_data_complete(year, combined_results[year], cfg):
-                            # Existing data is incomplete, check if new data is better
-                            if _is_year_data_complete(year, data, cfg):
-                                logger.info("Updating incomplete year %s with more complete data from filing %s", year, filing['accession'])
-                                combined_results[year] = data
-                                year_to_filing[year] = {
-                                    'accession': filing['accession'],
-                                    'filing_url': filing['filing_url'],
-                                    'date': filing.get('date', 'unknown')
-                                }
-                                years_updated.append(year)
-                                # Only remove from years_needed if data is now complete
-                                years_needed.discard(year_int)
-                    else:
-                        # We don't have this year yet
-                        combined_results[year] = data
-                        year_to_filing[year] = {
-                            'accession': filing['accession'],
-                            'filing_url': filing['filing_url'],
-                            'date': filing.get('date', 'unknown')
-                        }
-                        years_added.append(year)
-                        # Only remove from years_needed if data is complete
-                        if _is_year_data_complete(year, data, cfg):
-                            years_needed.discard(year_int)
-                        else:
-                            logger.info("Added incomplete year %s from filing %s - will continue searching", year, filing['accession'])
-            
-            if years_added or years_updated:
-                if years_added:
-                    logger.info("Added years %s from filing %s", sorted(years_added), filing['accession'])
-                if years_updated:
-                    logger.info("Updated years %s from filing %s", sorted(years_updated), filing['accession'])
+            # For the primary filing of this year, always take the data
+            year_str = str(year)
+            if year_str in results:
+                combined_results[year_str] = results[year_str]
+                year_to_filing[year_str] = {
+                    'accession': filing['accession'],
+                    'filing_url': filing['filing_url'],
+                    'date': filing.get('date', 'unknown')
+                }
+                logger.info("Extracted year %d data from primary filing %s", year, filing['accession'])
             else:
-                logger.info("No new years added from filing %s", filing['accession'])
-            
-            logger.info("Years still needed: %s", sorted(years_needed) if years_needed else "None")
+                logger.warning("Primary filing %s does not contain data for year %d", filing['accession'], year)
             
         except Exception as e:
-            logger.warning("Failed to process filing %s: %s", filing['accession'], e)
+            logger.warning("Failed to process primary filing %s for year %d: %s", filing['accession'], year, e)
             continue
+    
+    # Phase 2: Identify missing data and backfill from subsequent filings
+    logger.info("Phase 2: Identifying missing data and backfilling from subsequent filings")
+    
+    # First, identify what's missing for each year
+    years_with_missing_data = {}
+    for year_str, year_data in combined_results.items():
+        year = int(year_str)
+        missing = _find_missing_data(year_data, cfg, year)
+        if missing["segments"] or missing["metrics"] or missing["balance_sheet"]:
+            years_with_missing_data[year] = missing
+            logger.info("Year %d missing: segments=%s, metrics=%s, balance_sheet=%s", 
+                       year, missing["segments"], missing["metrics"], list(missing["balance_sheet"].keys()))
+    
+    # If we have missing data, look through ALL filings to fill gaps
+    if years_with_missing_data:
+        # Check all filings, including ones we used as primary filings for other years
+        # Later filings often contain historical segment data that wasn't in the original filing
+        backfill_filings = filings  # Check ALL filings
+        logger.info("Checking %d filings for missing data backfill", len(backfill_filings))
+        
+        for filing in backfill_filings:
+            if not years_with_missing_data:  # All gaps filled
+                break
+                
+            logger.info("Checking filing %s for missing data (date: %s)", filing['accession'], filing.get('date', 'unknown'))
+            
+            try:
+                xml_url = client.get_instance_xml_url(filing["filing_url"])
+                xml_text = client.fetch_xml(xml_url)
+                index = XBRLIndex(xml_text)
+                results = extract_all(index, cfg)
+                
+                # Check if this filing can fill missing data for any year
+                for year, missing in list(years_with_missing_data.items()):
+                    year_str = str(year)
+                    if year_str in results:
+                        # Try to fill missing data
+                        merged_data, filled_items = _merge_missing_data(
+                            combined_results[year_str], 
+                            results[year_str], 
+                            missing, 
+                            year
+                        )
+                        
+                        if filled_items:
+                            logger.info("Filled missing data for year %d from filing %s: %s", 
+                                       year, filing['accession'], ', '.join(filled_items))
+                            combined_results[year_str] = merged_data
+                            
+                            # Update the missing data tracker
+                            updated_missing = _find_missing_data(merged_data, cfg, year)
+                            if not (updated_missing["segments"] or updated_missing["metrics"] or updated_missing["balance_sheet"]):
+                                # All missing data filled for this year
+                                del years_with_missing_data[year]
+                                logger.info("Year %d now complete", year)
+                            else:
+                                years_with_missing_data[year] = updated_missing
+                
+            except Exception as e:
+                logger.warning("Failed to process backfill filing %s: %s", filing['accession'], e)
+                continue
+        
+        # Report any remaining missing data
+        if years_with_missing_data:
+            logger.warning("Could not fill all missing data:")
+            for year, missing in years_with_missing_data.items():
+                logger.warning("Year %d still missing: segments=%s, metrics=%s, balance_sheet=%s", 
+                              year, missing["segments"], missing["metrics"], list(missing["balance_sheet"].keys()))
     
     # Update year_to_filing to use actual filing URLs for each year
     logger.info("Looking up actual filing URLs for each extracted year...")
@@ -175,7 +308,9 @@ def extract_multi_year_data(ticker: str, form: str, config_path: str, target_yea
                 'date': f'{year}-12-31'
             }
     
-    missing_years = sorted(years_needed) if years_needed else []
+    # Check which target years we successfully extracted
+    extracted_year_ints = [int(year) for year in combined_results.keys()]
+    missing_years = [year for year in target_year_list if year not in extracted_year_ints]
     if missing_years:
         logger.warning("Could not find data for years: %s", missing_years)
     

@@ -40,8 +40,26 @@ def _convert_new_to_legacy_format(new_config: Dict[str, Any]) -> Dict[str, Any]:
     
     for name, config in profit_metrics.items():
         if isinstance(config, list):
-            # Simple list format
-            legacy_config["concept_aliases"][name] = config
+            # Handle list of year-based configurations
+            for item in config:
+                if isinstance(item, dict):
+                    # Year-based configuration
+                    aliases = item.get("aliases", [])
+                    legacy_config["metrics"].append({
+                        "name": name,
+                        "aliases": aliases,
+                        "strategy": item.get("strategy", "pick_first"),
+                        "required_dims": item.get("required_dims"),
+                        "units": item.get("units"),
+                        "period_type": item.get("period_type"),
+                        "filter_for_consolidated": item.get("filter_for_consolidated", False),
+                        "years": item.get("years")
+                    })
+                else:
+                    # Simple list format (backward compatibility)
+                    if name not in legacy_config["concept_aliases"]:
+                        legacy_config["concept_aliases"][name] = []
+                    legacy_config["concept_aliases"][name].append(item)
         elif isinstance(config, str):
             # Single string format
             legacy_config["concept_aliases"][name] = [config]

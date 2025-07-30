@@ -132,7 +132,16 @@
         "acquisition_costs": "us-gaap:DeferredPolicyAcquisitionCostAmortizationExpense",
         "underwriting_expenses": "us-gaap:OtherUnderwritingExpense",
         "taxes": "us-gaap:IncomeTaxExpenseBenefit",
-        "interest_expenses": "us-gaap:InterestExpenseOperating"
+        "interest_expenses": [
+          {
+            "aliases": ["us-gaap:InterestExpense"],
+            "years": "2016-2023"
+          },
+          {
+            "aliases": ["us-gaap:InterestExpenseOperating"],
+            "years": "2024-2027"
+          }
+        ]
       },
       "balance_sheet_metrics": {
         "fixed_income": {

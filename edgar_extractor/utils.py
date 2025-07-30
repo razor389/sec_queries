@@ -225,10 +225,8 @@ def load_company_config(path: str, ticker: str) -> CompanyConfig:
     metrics = _parse_metrics(merged)
 
     return CompanyConfig(
-        concept_aliases=merged.get("concept_aliases", {}),
         axis_aliases=merged.get("axis_aliases", {}),
         consolidated_members=merged.get("consolidated_members", []),
         metrics=metrics,
         segments=segs,
-        balance_sheet_concepts=merged.get("balance_sheet_concepts", {}),
     )

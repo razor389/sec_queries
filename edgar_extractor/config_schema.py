@@ -84,7 +84,7 @@ class NewGlobalConfig:
     companies: Dict[str, NewCompanyConfig]
 
 
-# Legacy schema classes (preserved for backward compatibility)
+# Main schema classes for current config format
 @dataclass
 class MetricRule:
     name: str
@@ -112,14 +112,10 @@ class SegmentRule:
 
 @dataclass
 class CompanyConfig:
-    concept_aliases: Dict[str, List[str]] = field(default_factory=dict)
     axis_aliases: Dict[str, List[str]] = field(default_factory=dict)
     consolidated_members: List[str] = field(default_factory=list)
-
     metrics: List[MetricRule] = field(default_factory=list)
     segments: List[SegmentRule] = field(default_factory=list)
-
-    balance_sheet_concepts: Dict[str, List[str]] = field(default_factory=dict)
 
 
 @dataclass

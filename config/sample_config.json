@@ -77,7 +77,10 @@
         "losses_and_expenses": "us-gaap:IncurredClaimsPropertyCasualtyAndLiability",
         "acquisition_costs": "us-gaap:DeferredPolicyAcquisitionCostAmortizationExpense",
         "underwriting_expenses": "us-gaap:OtherUnderwritingExpense",
-        "taxes": "us-gaap:IncomeTaxExpenseBenefit",
+        "taxes": {
+          "aliases": ["us-gaap:IncomeTaxExpenseBenefit"],
+          "strategy": "max"
+        },
         "interest_expenses": "us-gaap:InterestExpenseDebt"
       },
       "balance_sheet_metrics": {
